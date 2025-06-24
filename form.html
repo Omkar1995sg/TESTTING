@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>QR Attendance with Address (Free OSM)</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; }
+    button[disabled] { opacity:.5; }
+    #status { margin-top:1.5rem; font-weight:600; }
+  </style>
+</head>
+<body>
+  <h2>Mark Attendance</h2>
+
+  <form id="rollForm">
+    <label for="roll">Roll No:</label>
+    <select id="roll" required>
+      <option value="">--Select Roll No--</option>
+    </select><br><br>
+    <button type="submit">Mark Present</button>
+  </form>
+
+  <div id="status"></div>
+
+<script>
+(() => {
+  /* ──────────────────────────────────────────────────────────
+     1.  Build dropdown J1‒J600
+  ────────────────────────────────────────────────────────── */
+  const rollSel = document.getElementById('roll');
+  for (let i = 1; i <= 600; i++) {
+    const opt = document.createElement('option');
+    opt.value = opt.textContent = `J${i}`;
+    rollSel.appendChild(opt);
+  }
+
+  /* ──────────────────────────────────────────────────────────
+     2.  Your Google Form details
+         – viewForm URL == what you copied
+         – formResponse URL == same ID, but ends with /formResponse
+  ────────────────────────────────────────────────────────── */
+  const viewURL         = 'https://docs.google.com/forms/d/e/1FAIpQLSdQeaLekkBw6LWSkvdzj_II7SXcW3avndf63dQmColcWgB1Tw/viewform?usp=pp_url';
+  const responseURL     = viewURL.replace('/viewform', '/formResponse');
+  const entryRoll       = 'entry.846968130';
+  const entryLocation   = 'entry.718692023';
+  const entryAddress    = 'entry.1049514207';
+
+  /* ──────────────────────────────────────────────────────────
+     3.  Handle Submit
+  ────────────────────────────────────────────────────────── */
+  document.getElementById('rollForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const roll = rollSel.value;
+    if (!roll) { alert('Please select your roll number.'); return; }
+
+    if (!navigator.geolocation) { alert('Geolocation not supported.'); return; }
+
+    document.getElementById('status').textContent = '📍 Fetching location…';
+
+    navigator.geolocation.getCurrentPosition(async pos => {
+      const lat  = pos.coords.latitude.toFixed(6);
+      const lon  = pos.coords.longitude.toFixed(6);
+      const loc  = `${lat},${lon}`;
+
+      /* 3a.  Reverse‑geocode via free OpenStreetMap */
+      let address = 'Unknown';
+      try {
+        const r = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`,
+          { headers: { 'User-Agent':'qr-attendance-demo/1.0' } }
+        );
+        const j = await r.json();
+        address = j.display_name || 'Unknown';
+      } catch (err) { console.warn('Geocode failed:', err); }
+
+      /* 3b.  Build URL‑encoded payload */
+      const payload = new URLSearchParams({
+        [entryRoll]     : roll,
+        [entryLocation] : loc,
+        [entryAddress]  : address
+      }).toString();
+
+      /* 3c.  POST silently (no‑cors) */
+      try {
+        await fetch(responseURL, {
+          method : 'POST',
+          mode   : 'no-cors',
+          headers: { 'Content-Type':'application/x-www-form-urlencoded' },
+          body   : payload
+        });
+      } catch (err) {
+        alert('Submit failed – please try again.'); 
+        return;
+      }
+
+      /* 3d.  Show success message & hide form */
+      document.body.innerHTML =
+        `<h2 style="color:green;">✅ Attendance marked!</h2>
+         <p>Roll No&nbsp;<strong>${roll}</strong> recorded at<br>
+            ${lat}, ${lon}<br>
+            ${address}</p>`;
+    },
+    err => alert('Location error: ' + err.message),
+    { enableHighAccuracy:true, timeout:10000 });
+  });
+})();
+</script>
+</body>
+</html>
